@@ -12,7 +12,14 @@ pub struct SqliteCache {
 impl SqliteCache {
     /// Create a new SQLite cache and initialize the database
     pub async fn new(database_path: &str) -> Result<Self> {
-        info!("Initializing SQLite cache at: {}", database_path);
+        // Check if database file already exists
+        let db_exists = std::path::Path::new(database_path).exists();
+
+        if db_exists {
+            info!("Using existing database at: {}", database_path);
+        } else {
+            info!("Creating new database at: {}", database_path);
+        }
 
         let options = SqliteConnectOptions::from_str(database_path)?
             .create_if_missing(true);
@@ -25,6 +32,17 @@ impl SqliteCache {
 
         let cache = Self { pool };
         cache.run_migrations().await?;
+
+        // Log cache statistics if database existed
+        if db_exists {
+            let stats = cache.get_stats().await?;
+            info!(
+                "Cache loaded: {} lists with {} total items",
+                stats.total_lists, stats.total_items
+            );
+        } else {
+            info!("New database initialized successfully");
+        }
 
         Ok(cache)
     }
@@ -238,6 +256,30 @@ impl SqliteCache {
     pub fn current_timestamp() -> i64 {
         Utc::now().timestamp()
     }
+
+    /// Get cache statistics
+    pub async fn get_stats(&self) -> Result<CacheStats> {
+        let total_lists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM lists")
+            .fetch_one(&self.pool)
+            .await
+            .context("Failed to count lists")?;
+
+        let total_items: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items")
+            .fetch_one(&self.pool)
+            .await
+            .context("Failed to count items")?;
+
+        Ok(CacheStats {
+            total_lists: total_lists as usize,
+            total_items: total_items as usize,
+        })
+    }
+}
+
+/// Cache statistics
+pub struct CacheStats {
+    pub total_lists: usize,
+    pub total_items: usize,
 }
 
 #[cfg(test)]
