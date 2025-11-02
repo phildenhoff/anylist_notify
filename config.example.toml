@@ -1,0 +1,35 @@
+[anylist]
+# AnyList credentials - can be overridden with environment variables
+# email = "your-email@example.com"
+# password = "your-password"
+
+[cache]
+# Path to SQLite database
+database_path = "./anylist.db"
+
+[ntfy]
+# ntfy.sh server base URL
+base_url = "https://ntfy.sh"
+
+# Topic to send notifications to
+topic = "anylist-updates"
+
+# Notification priorities per event type
+[ntfy.priorities]
+item_added = "default"
+item_checked = "low"
+item_unchecked = "default"
+item_removed = "default"
+item_modified = "default"
+
+# Notification tags per event type (comma-separated)
+[ntfy.tags]
+item_added = "heavy_plus_sign,shopping_cart"
+item_checked = "white_check_mark"
+item_unchecked = "arrow_backward"
+item_removed = "x,shopping_cart"
+item_modified = "pencil2"
+
+[logging]
+# Log level: trace, debug, info, warn, error
+level = "info"

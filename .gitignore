@@ -1,0 +1,22 @@
+# Rust
+/target/
+Cargo.lock
+
+# Environment and config files
+.env
+config.toml
+
+# SQLite database
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
