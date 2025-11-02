@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.70-slim as builder
+FROM rust:1.85-slim as builder
 
 # Install build dependencies (including git for fetching git dependencies)
 RUN apt-get update && apt-get install -y \
