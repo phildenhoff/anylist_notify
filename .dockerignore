@@ -1,0 +1,30 @@
+# Build artifacts
+target/
+*.db
+*.db-shm
+*.db-wal
+
+# Git
+.git/
+.gitignore
+
+# Environment and config
+.env
+config.toml
+data/
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# macOS
+.DS_Store
