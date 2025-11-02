@@ -76,6 +76,7 @@ impl SqliteCache {
                 quantity TEXT,
                 category TEXT,
                 is_checked BOOLEAN NOT NULL,
+                user_id TEXT,
                 last_seen INTEGER NOT NULL,
                 FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE
             )
@@ -84,6 +85,12 @@ impl SqliteCache {
         .execute(&self.pool)
         .await
         .context("Failed to create items table")?;
+
+        // Migration: Add user_id column to existing databases
+        // This will silently fail if the column already exists, which is fine
+        let _ = sqlx::query("ALTER TABLE items ADD COLUMN user_id TEXT")
+            .execute(&self.pool)
+            .await;
 
         // Create index on list_id for faster lookups
         sqlx::query(
@@ -115,7 +122,7 @@ impl SqliteCache {
     /// Get all cached items for a list
     pub async fn get_items(&self, list_id: &str) -> Result<Vec<DbItem>> {
         let items = sqlx::query_as::<_, DbItem>(
-            "SELECT id, list_id, name, details, quantity, category, is_checked, last_seen FROM items WHERE list_id = ?",
+            "SELECT id, list_id, name, details, quantity, category, is_checked, user_id, last_seen FROM items WHERE list_id = ?",
         )
         .bind(list_id)
         .fetch_all(&self.pool)
@@ -163,8 +170,8 @@ impl SqliteCache {
     pub async fn upsert_item(&self, item: &DbItem) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO items (id, list_id, name, details, quantity, category, is_checked, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO items (id, list_id, name, details, quantity, category, is_checked, user_id, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 list_id = excluded.list_id,
                 name = excluded.name,
@@ -172,6 +179,7 @@ impl SqliteCache {
                 quantity = excluded.quantity,
                 category = excluded.category,
                 is_checked = excluded.is_checked,
+                user_id = excluded.user_id,
                 last_seen = excluded.last_seen
             "#,
         )
@@ -182,6 +190,7 @@ impl SqliteCache {
         .bind(&item.quantity)
         .bind(&item.category)
         .bind(item.is_checked)
+        .bind(&item.user_id)
         .bind(item.last_seen)
         .execute(&self.pool)
         .await
@@ -211,7 +220,7 @@ impl SqliteCache {
     pub async fn delete_stale_items(&self, list_id: &str, since: i64) -> Result<Vec<DbItem>> {
         // First, fetch the items that will be deleted
         let stale_items = sqlx::query_as::<_, DbItem>(
-            "SELECT id, list_id, name, details, quantity, category, is_checked, last_seen FROM items WHERE list_id = ? AND last_seen < ?",
+            "SELECT id, list_id, name, details, quantity, category, is_checked, user_id, last_seen FROM items WHERE list_id = ? AND last_seen < ?",
         )
         .bind(list_id)
         .bind(since)
@@ -313,6 +322,7 @@ mod tests {
             Some("1 gallon".to_string()),
             Some("Dairy".to_string()),
             false,
+            Some("test-user-id".to_string()),
         );
         cache.upsert_item(&item).await.expect("Failed to upsert item");
 

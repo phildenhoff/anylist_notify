@@ -7,6 +7,8 @@ pub struct Config {
     pub cache: CacheConfig,
     pub ntfy: NtfyConfig,
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub notifications: NotificationsConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -88,7 +90,25 @@ pub struct LoggingConfig {
     pub level: String,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct NotificationsConfig {
+    /// Filter out changes made by the authenticated user (based on AnyList email)
+    #[serde(default = "default_filter_own_changes")]
+    pub filter_own_changes: bool,
+}
+
+impl Default for NotificationsConfig {
+    fn default() -> Self {
+        Self {
+            filter_own_changes: default_filter_own_changes(),
+        }
+    }
+}
+
 // Default value functions
+fn default_filter_own_changes() -> bool {
+    false
+}
 fn default_priority() -> String {
     "default".to_string()
 }

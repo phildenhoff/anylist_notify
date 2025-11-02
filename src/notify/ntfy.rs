@@ -85,6 +85,7 @@ impl NtfyClient {
             ListChange::ItemAdded {
                 list_name,
                 item,
+                user_id,
                 ..
             } => {
                 let title = format!("➕ {} added to {}", item.name, list_name);
@@ -98,6 +99,9 @@ impl NtfyClient {
                 }
                 if let Some(category) = &item.category {
                     message_parts.push(format!("Category: {}", category));
+                }
+                if let Some(uid) = user_id {
+                    message_parts.push(format!("Changed by: {}", format_user_id(uid)));
                 }
 
                 let message = if message_parts.is_empty() {
@@ -115,10 +119,14 @@ impl NtfyClient {
             ListChange::ItemRemoved {
                 list_name,
                 item_name,
+                user_id,
                 ..
             } => {
                 let title = format!("❌ {} removed from {}", item_name, list_name);
-                let message = format!("Removed from {}", list_name);
+                let mut message = format!("Removed from {}", list_name);
+                if let Some(uid) = user_id {
+                    message.push_str(&format!("\nChanged by: {}", format_user_id(uid)));
+                }
                 let priority = self.config.priorities.item_removed.clone();
                 let tags = parse_tags(&self.config.tags.item_removed);
 
@@ -128,10 +136,14 @@ impl NtfyClient {
             ListChange::ItemChecked {
                 list_name,
                 item_name,
+                user_id,
                 ..
             } => {
                 let title = format!("✅ {} checked off in {}", item_name, list_name);
-                let message = format!("Checked off in {}", list_name);
+                let mut message = format!("Checked off in {}", list_name);
+                if let Some(uid) = user_id {
+                    message.push_str(&format!("\nChanged by: {}", format_user_id(uid)));
+                }
                 let priority = self.config.priorities.item_checked.clone();
                 let tags = parse_tags(&self.config.tags.item_checked);
 
@@ -141,10 +153,14 @@ impl NtfyClient {
             ListChange::ItemUnchecked {
                 list_name,
                 item_name,
+                user_id,
                 ..
             } => {
                 let title = format!("◀️ {} unchecked in {}", item_name, list_name);
-                let message = format!("Unchecked in {}", list_name);
+                let mut message = format!("Unchecked in {}", list_name);
+                if let Some(uid) = user_id {
+                    message.push_str(&format!("\nChanged by: {}", format_user_id(uid)));
+                }
                 let priority = self.config.priorities.item_unchecked.clone();
                 let tags = parse_tags(&self.config.tags.item_unchecked);
 
@@ -155,10 +171,14 @@ impl NtfyClient {
                 list_name,
                 item_name,
                 changes,
+                user_id,
                 ..
             } => {
                 let title = format!("✏️ {} modified in {}", item_name, list_name);
-                let message = format_field_changes(changes);
+                let mut message = format_field_changes(changes);
+                if let Some(uid) = user_id {
+                    message.push_str(&format!("\nChanged by: {}", format_user_id(uid)));
+                }
                 let priority = self.config.priorities.item_modified.clone();
                 let tags = parse_tags(&self.config.tags.item_modified);
 
@@ -166,6 +186,14 @@ impl NtfyClient {
             }
         }
     }
+}
+
+/// Format a user ID into a more readable string
+/// Currently just returns the ID, but could be extended to look up user names
+fn format_user_id(user_id: &str) -> String {
+    // For now, just return the user ID
+    // In the future, this could map user IDs to friendly names
+    user_id.to_string()
 }
 
 /// Parse comma-separated tags into a vector

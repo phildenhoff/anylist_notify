@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# AnyList API client
-anylist_rs = { git = "https://github.com/phildenhoff/anylist_rs.git" }
+# AnyList API client (using local path for development with user_id support)
+anylist_rs = { path = "../anylist_rs" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

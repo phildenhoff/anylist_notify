@@ -10,24 +10,28 @@ pub enum ListChange {
         list_id: String,
         list_name: String,
         item: ItemInfo,
+        user_id: Option<String>,
     },
     /// An item was removed from the list
     ItemRemoved {
         list_id: String,
         list_name: String,
         item_name: String,
+        user_id: Option<String>,
     },
     /// An item was checked off
     ItemChecked {
         list_id: String,
         list_name: String,
         item_name: String,
+        user_id: Option<String>,
     },
     /// An item was unchecked
     ItemUnchecked {
         list_id: String,
         list_name: String,
         item_name: String,
+        user_id: Option<String>,
     },
     /// An item's fields were modified
     ItemModified {
@@ -35,6 +39,7 @@ pub enum ListChange {
         list_name: String,
         item_name: String,
         changes: Vec<FieldChange>,
+        user_id: Option<String>,
     },
 }
 
@@ -46,6 +51,7 @@ pub struct ItemInfo {
     pub details: String,
     pub quantity: Option<String>,
     pub category: Option<String>,
+    pub user_id: Option<String>,
 }
 
 /// Represents a change to a specific field
@@ -65,6 +71,7 @@ impl ItemInfo {
             details: item.details.clone(),
             quantity: item.quantity.clone(),
             category: item.category.clone(),
+            user_id: item.user_id.clone(),
         }
     }
 
@@ -75,6 +82,7 @@ impl ItemInfo {
             details: item.details.clone(),
             quantity: item.quantity.clone(),
             category: item.category.clone(),
+            user_id: item.user_id.clone(),
         }
     }
 }
@@ -101,6 +109,7 @@ pub fn detect_changes(
                 list_id: list_id.to_string(),
                 list_name: list_name.to_string(),
                 item: ItemInfo::from_list_item(current_item),
+                user_id: current_item.user_id.clone(),
             });
         }
     }
@@ -112,6 +121,7 @@ pub fn detect_changes(
                 list_id: list_id.to_string(),
                 list_name: list_name.to_string(),
                 item_name: cached_item.name.clone(),
+                user_id: cached_item.user_id.clone(),
             });
         }
     }
@@ -126,12 +136,14 @@ pub fn detect_changes(
                         list_id: list_id.to_string(),
                         list_name: list_name.to_string(),
                         item_name: current_item.name.clone(),
+                        user_id: current_item.user_id.clone(),
                     });
                 } else {
                     changes.push(ListChange::ItemUnchecked {
                         list_id: list_id.to_string(),
                         list_name: list_name.to_string(),
                         item_name: current_item.name.clone(),
+                        user_id: current_item.user_id.clone(),
                     });
                 }
             }
@@ -144,6 +156,7 @@ pub fn detect_changes(
                     list_name: list_name.to_string(),
                     item_name: current_item.name.clone(),
                     changes: field_changes,
+                    user_id: current_item.user_id.clone(),
                 });
             }
         }
@@ -200,6 +213,7 @@ mod tests {
             quantity: None,
             category: None,
             is_checked,
+            user_id: Some("test-user".to_string()),
             last_seen: 0,
         }
     }
@@ -213,6 +227,7 @@ mod tests {
             quantity: None,
             category: None,
             is_checked,
+            user_id: Some("test-user".to_string()),
         }
     }
 
@@ -290,6 +305,7 @@ mod tests {
             quantity: Some("1 gallon".to_string()),
             category: None,
             is_checked: false,
+            user_id: Some("test-user".to_string()),
             last_seen: 0,
         }];
 
@@ -301,6 +317,7 @@ mod tests {
             quantity: Some("2 gallons".to_string()),
             category: None,
             is_checked: false,
+            user_id: Some("test-user".to_string()),
         }];
 
         let changes = detect_changes("list-1", "Groceries", &cached, &current);

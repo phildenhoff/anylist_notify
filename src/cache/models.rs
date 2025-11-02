@@ -19,6 +19,7 @@ pub struct DbItem {
     pub quantity: Option<String>,
     pub category: Option<String>,
     pub is_checked: bool,
+    pub user_id: Option<String>,
     pub last_seen: i64, // Unix timestamp
 }
 
@@ -45,6 +46,7 @@ impl DbItem {
         quantity: Option<String>,
         category: Option<String>,
         is_checked: bool,
+        user_id: Option<String>,
     ) -> Self {
         Self {
             id,
@@ -54,6 +56,7 @@ impl DbItem {
             quantity,
             category,
             is_checked,
+            user_id,
             last_seen: Utc::now().timestamp(),
         }
     }
@@ -74,6 +77,7 @@ impl From<&anylist_rs::ListItem> for DbItem {
             item.quantity.clone(),
             item.category.clone(),
             item.is_checked,
+            item.user_id.clone(),
         )
     }
 }

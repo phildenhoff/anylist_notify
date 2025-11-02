@@ -1,15 +1,18 @@
 use crate::cache::SqliteCache;
+use crate::config::Config;
 use crate::notify::NtfyClient;
-use crate::sync::diff::detect_changes;
+use crate::sync::diff::{detect_changes, ListChange};
 use anyhow::{Context, Result};
 use anylist_rs::{AnyListClient, SyncEvent};
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct SyncHandler {
     client: Arc<AnyListClient>,
     cache: Arc<SqliteCache>,
     notifier: Arc<NtfyClient>,
+    config: Arc<Config>,
+    authenticated_user_id: String,
 }
 
 impl SyncHandler {
@@ -17,11 +20,15 @@ impl SyncHandler {
         client: Arc<AnyListClient>,
         cache: Arc<SqliteCache>,
         notifier: Arc<NtfyClient>,
+        config: Arc<Config>,
     ) -> Self {
+        let authenticated_user_id = client.user_id();
         Self {
             client,
             cache,
             notifier,
+            config,
+            authenticated_user_id,
         }
     }
 
@@ -103,12 +110,25 @@ impl SyncHandler {
             .context("Failed to get cached items")?;
 
         // Detect changes
-        let changes = detect_changes(
+        let mut changes = detect_changes(
             &current_list.id,
             &current_list.name,
             &cached_items,
             &current_list.items,
         );
+
+        // Filter out own changes if configured
+        if self.config.notifications.filter_own_changes {
+            let original_count = changes.len();
+            changes = self.filter_own_changes(changes);
+            let filtered_count = original_count - changes.len();
+            if filtered_count > 0 {
+                debug!(
+                    "Filtered out {} change(s) made by authenticated user in list: {}",
+                    filtered_count, current_list.name
+                );
+            }
+        }
 
         if !changes.is_empty() {
             info!(
@@ -136,6 +156,31 @@ impl SyncHandler {
             .context("Failed to sync list to cache")?;
 
         Ok(())
+    }
+
+    /// Filter out changes made by the authenticated user
+    fn filter_own_changes(&self, changes: Vec<ListChange>) -> Vec<ListChange> {
+        changes
+            .into_iter()
+            .filter(|change| {
+                let user_id = match change {
+                    ListChange::ItemAdded { user_id, .. } => user_id,
+                    ListChange::ItemRemoved { user_id, .. } => user_id,
+                    ListChange::ItemChecked { user_id, .. } => user_id,
+                    ListChange::ItemUnchecked { user_id, .. } => user_id,
+                    ListChange::ItemModified { user_id, .. } => user_id,
+                };
+
+                // Keep the change if user_id doesn't match authenticated user
+                match user_id {
+                    Some(id) => id != &self.authenticated_user_id,
+                    None => {
+                        warn!("Change has no user_id, including in notifications");
+                        true // Include changes with no user_id
+                    }
+                }
+            })
+            .collect()
     }
 
     /// Detect lists that have been deleted

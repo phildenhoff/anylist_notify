@@ -53,11 +53,22 @@ async fn main() -> Result<()> {
     // Initialize ntfy client
     let notifier = Arc::new(NtfyClient::new(config.ntfy.clone()));
 
+    // Create config Arc for sharing
+    let config = Arc::new(config);
+
+    // Log filtering settings
+    if config.notifications.filter_own_changes {
+        info!("Filtering enabled: Changes made by you will not trigger notifications");
+    } else {
+        info!("Filtering disabled: All changes will trigger notifications");
+    }
+
     // Create sync handler
     let handler = Arc::new(SyncHandler::new(
         client.clone(),
         cache.clone(),
         notifier.clone(),
+        config.clone(),
     ));
 
     // Initialize cache with current state
