@@ -142,25 +142,23 @@ impl Config {
             }
         }
 
-        // Override with environment variables
-        builder = builder
-            .add_source(
-                config::Environment::with_prefix("ANYLIST")
-                    .prefix_separator("_")
-                    .separator("__"),
-            )
-            .add_source(
-                config::Environment::with_prefix("NTFY")
-                    .prefix_separator("_")
-                    .separator("__"),
-            )
-            .add_source(
-                config::Environment::with_prefix("DATABASE")
-                    .prefix_separator("_")
-                    .separator("__"),
-            );
-
-        // Handle RUST_LOG separately
+        // Manually set values from environment variables
+        // This is more explicit and reliable than using Environment source
+        if let Ok(email) = std::env::var("ANYLIST_EMAIL") {
+            builder = builder.set_override("anylist.email", email)?;
+        }
+        if let Ok(password) = std::env::var("ANYLIST_PASSWORD") {
+            builder = builder.set_override("anylist.password", password)?;
+        }
+        if let Ok(url) = std::env::var("NTFY_URL") {
+            builder = builder.set_override("ntfy.base_url", url)?;
+        }
+        if let Ok(topic) = std::env::var("NTFY_TOPIC") {
+            builder = builder.set_override("ntfy.topic", topic)?;
+        }
+        if let Ok(db_path) = std::env::var("DATABASE_PATH") {
+            builder = builder.set_override("cache.database_path", db_path)?;
+        }
         if let Ok(log_level) = std::env::var("RUST_LOG") {
             builder = builder.set_override("logging.level", log_level)?;
         }

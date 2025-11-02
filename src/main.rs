@@ -17,7 +17,10 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info"))
+        )
         .init();
 
     info!("Starting AnyList Notification Service");
