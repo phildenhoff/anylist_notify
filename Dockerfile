@@ -1,17 +1,18 @@
 # Build stage
-FROM rust:1.85-slim as builder
+FROM rust:1.83-slim AS builder
 
 # Install build dependencies (including git for fetching git dependencies)
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     git \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Copy manifests first for better layer caching
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 
 # Copy source code
 COPY src ./src
