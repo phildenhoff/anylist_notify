@@ -50,11 +50,14 @@ async fn main() -> Result<()> {
 
     info!("Authenticated successfully");
 
-    // Initialize ntfy client
-    let notifier = Arc::new(NtfyClient::new(config.ntfy.clone()));
-
     // Create config Arc for sharing
     let config = Arc::new(config);
+
+    // Create shared user names map
+    let user_names = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+
+    // Initialize ntfy client with user names map
+    let notifier = Arc::new(NtfyClient::new(config.ntfy.clone(), user_names.clone()));
 
     // Log filtering settings
     if config.notifications.filter_own_changes {
@@ -69,6 +72,7 @@ async fn main() -> Result<()> {
         cache.clone(),
         notifier.clone(),
         config.clone(),
+        user_names.clone(),
     ));
 
     // Initialize cache with current state

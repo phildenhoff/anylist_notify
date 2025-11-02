@@ -3,11 +3,14 @@ use crate::sync::diff::{FieldChange, ListChange};
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::{debug, error, info};
 
 pub struct NtfyClient {
     client: Client,
     config: NtfyConfig,
+    user_names: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -22,16 +25,20 @@ struct NtfyMessage {
 }
 
 impl NtfyClient {
-    pub fn new(config: NtfyConfig) -> Self {
+    pub fn new(
+        config: NtfyConfig,
+        user_names: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
+    ) -> Self {
         Self {
             client: Client::new(),
             config,
+            user_names,
         }
     }
 
     /// Send a notification for a list change
     pub async fn notify(&self, change: &ListChange) -> Result<()> {
-        let (title, message, priority, tags) = self.format_notification(change);
+        let (title, message, priority, tags) = self.format_notification(change).await;
 
         let ntfy_msg = NtfyMessage {
             topic: self.config.topic.clone(),
@@ -79,8 +86,14 @@ impl NtfyClient {
         }
     }
 
+    /// Get the user name for a given user ID, falling back to the ID itself
+    async fn get_user_name(&self, user_id: &str) -> String {
+        let names = self.user_names.read().await;
+        names.get(user_id).cloned().unwrap_or_else(|| user_id.to_string())
+    }
+
     /// Format a list change into notification components
-    fn format_notification(&self, change: &ListChange) -> (String, String, String, Vec<String>) {
+    async fn format_notification(&self, change: &ListChange) -> (String, String, String, Vec<String>) {
         match change {
             ListChange::ItemAdded {
                 list_name,
@@ -101,7 +114,8 @@ impl NtfyClient {
                     message_parts.push(format!("Category: {}", category));
                 }
                 if let Some(uid) = user_id {
-                    message_parts.push(format!("Changed by: {}", format_user_id(uid)));
+                    let user_name = self.get_user_name(uid).await;
+                    message_parts.push(format!("Changed by: {}", user_name));
                 }
 
                 let message = if message_parts.is_empty() {
@@ -125,7 +139,8 @@ impl NtfyClient {
                 let title = format!("❌ {} removed from {}", item_name, list_name);
                 let mut message = format!("Removed from {}", list_name);
                 if let Some(uid) = user_id {
-                    message.push_str(&format!("\nChanged by: {}", format_user_id(uid)));
+                    let user_name = self.get_user_name(uid).await;
+                    message.push_str(&format!("\nChanged by: {}", user_name));
                 }
                 let priority = self.config.priorities.item_removed.clone();
                 let tags = parse_tags(&self.config.tags.item_removed);
@@ -142,7 +157,8 @@ impl NtfyClient {
                 let title = format!("✅ {} checked off in {}", item_name, list_name);
                 let mut message = format!("Checked off in {}", list_name);
                 if let Some(uid) = user_id {
-                    message.push_str(&format!("\nChanged by: {}", format_user_id(uid)));
+                    let user_name = self.get_user_name(uid).await;
+                    message.push_str(&format!("\nChanged by: {}", user_name));
                 }
                 let priority = self.config.priorities.item_checked.clone();
                 let tags = parse_tags(&self.config.tags.item_checked);
@@ -159,7 +175,8 @@ impl NtfyClient {
                 let title = format!("◀️ {} unchecked in {}", item_name, list_name);
                 let mut message = format!("Unchecked in {}", list_name);
                 if let Some(uid) = user_id {
-                    message.push_str(&format!("\nChanged by: {}", format_user_id(uid)));
+                    let user_name = self.get_user_name(uid).await;
+                    message.push_str(&format!("\nChanged by: {}", user_name));
                 }
                 let priority = self.config.priorities.item_unchecked.clone();
                 let tags = parse_tags(&self.config.tags.item_unchecked);
@@ -177,7 +194,8 @@ impl NtfyClient {
                 let title = format!("✏️ {} modified in {}", item_name, list_name);
                 let mut message = format_field_changes(changes);
                 if let Some(uid) = user_id {
-                    message.push_str(&format!("\nChanged by: {}", format_user_id(uid)));
+                    let user_name = self.get_user_name(uid).await;
+                    message.push_str(&format!("\nChanged by: {}", user_name));
                 }
                 let priority = self.config.priorities.item_modified.clone();
                 let tags = parse_tags(&self.config.tags.item_modified);
@@ -186,14 +204,6 @@ impl NtfyClient {
             }
         }
     }
-}
-
-/// Format a user ID into a more readable string
-/// Currently just returns the ID, but could be extended to look up user names
-fn format_user_id(user_id: &str) -> String {
-    // For now, just return the user ID
-    // In the future, this could map user IDs to friendly names
-    user_id.to_string()
 }
 
 /// Parse comma-separated tags into a vector

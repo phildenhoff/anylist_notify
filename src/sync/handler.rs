@@ -4,6 +4,7 @@ use crate::notify::NtfyClient;
 use crate::sync::diff::{detect_changes, ListChange};
 use anyhow::{Context, Result};
 use anylist_rs::{AnyListClient, SyncEvent};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -13,6 +14,7 @@ pub struct SyncHandler {
     notifier: Arc<NtfyClient>,
     config: Arc<Config>,
     authenticated_user_id: String,
+    user_names: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
 }
 
 impl SyncHandler {
@@ -21,6 +23,7 @@ impl SyncHandler {
         cache: Arc<SqliteCache>,
         notifier: Arc<NtfyClient>,
         config: Arc<Config>,
+        user_names: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
     ) -> Self {
         let authenticated_user_id = client.user_id();
         Self {
@@ -29,7 +32,14 @@ impl SyncHandler {
             notifier,
             config,
             authenticated_user_id,
+            user_names,
         }
+    }
+
+    /// Get the user name for a given user ID
+    pub async fn get_user_name(&self, user_id: &str) -> Option<String> {
+        let names = self.user_names.read().await;
+        names.get(user_id).cloned()
     }
 
     /// Initialize the cache with current list state
@@ -42,6 +52,9 @@ impl SyncHandler {
             .get_lists()
             .await
             .context("Failed to fetch initial lists")?;
+
+        // Update user names mapping
+        self.update_user_names(&lists).await;
 
         for list in &lists {
             self.cache
@@ -81,6 +94,9 @@ impl SyncHandler {
             .await
             .context("Failed to fetch updated lists")?;
 
+        // Update user names mapping from all lists
+        self.update_user_names(&current_lists).await;
+
         // Process each list
         for current_list in &current_lists {
             if let Err(e) = self.process_list_changes(current_list).await {
@@ -96,6 +112,34 @@ impl SyncHandler {
         self.detect_deleted_lists(&current_lists).await?;
 
         Ok(())
+    }
+
+    /// Update user names mapping from list shared users
+    async fn update_user_names(&self, lists: &[anylist_rs::List]) {
+        let mut names = self.user_names.write().await;
+
+        for list in lists {
+            for user in &list.shared_users {
+                // Use full name if available, otherwise email, otherwise user_id
+                let display_name = if let Some(ref name) = user.full_name {
+                    if !name.is_empty() {
+                        name.clone()
+                    } else if let Some(ref email) = user.email {
+                        email.clone()
+                    } else {
+                        user.user_id.clone()
+                    }
+                } else if let Some(ref email) = user.email {
+                    email.clone()
+                } else {
+                    user.user_id.clone()
+                };
+
+                names.insert(user.user_id.clone(), display_name);
+            }
+        }
+
+        debug!("Updated user names mapping with {} users", names.len());
     }
 
     /// Process changes for a single list
