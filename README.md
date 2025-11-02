@@ -2,6 +2,8 @@
 
 A Rust service that monitors your [AnyList](https://www.anylist.com/) shopping lists in real-time and sends detailed notifications via [ntfy.sh](https://ntfy.sh) when items are added, removed, checked off, or modified.
 
+Built with the [anylist_rs](https://github.com/phildenhoff/anylist_rs) library.
+
 ## Features
 
 - **Real-time monitoring**: Uses WebSocket connection to AnyList for instant updates
@@ -10,9 +12,16 @@ A Rust service that monitors your [AnyList](https://www.anylist.com/) shopping l
 - **SQLite caching**: Maintains local state to enable accurate change detection
 - **Flexible configuration**: TOML config file with environment variable overrides
 - **Comprehensive logging**: Structured logging with configurable levels
+- **Docker ready**: Easy deployment with included Dockerfile
 
 ## Prerequisites
 
+**For Docker deployment (recommended):**
+- Docker and Docker Compose
+- AnyList account
+- ntfy.sh topic
+
+**For local development:**
 - Rust 1.70+ (install from [rustup.rs](https://rustup.rs/))
 - AnyList account
 - ntfy.sh topic (use the public server or self-hosted instance)

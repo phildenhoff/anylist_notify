@@ -1,21 +1,22 @@
 # Build stage
 FROM rust:1.70-slim as builder
 
-# Install build dependencies
+# Install build dependencies (including git for fetching git dependencies)
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy manifests
+# Copy manifests first for better layer caching
 COPY Cargo.toml ./
 
 # Copy source code
 COPY src ./src
 
-# Build the application
+# Build the application (will fetch anylist_rs from git)
 RUN cargo build --release
 
 # Runtime stage

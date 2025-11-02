@@ -60,8 +60,9 @@ docker-compose down
 If using Dokploy on your Unraid server:
 
 1. **Create a new service** in Dokploy
-2. **Connect your Git repository** or upload the project
-3. **Set environment variables** in Dokploy UI:
+2. **Select build type**: Dockerfile
+3. **Connect your Git repository** (the `anylist_notify` repo)
+4. **Set environment variables** in Dokploy UI:
    - `ANYLIST_EMAIL`
    - `ANYLIST_PASSWORD`
    - `NTFY_TOPIC`
