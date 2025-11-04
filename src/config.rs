@@ -107,7 +107,7 @@ impl Default for NotificationsConfig {
 
 // Default value functions
 fn default_filter_own_changes() -> bool {
-    false
+    true
 }
 fn default_priority() -> String {
     "default".to_string()
@@ -181,6 +181,10 @@ impl Config {
         }
         if let Ok(log_level) = std::env::var("RUST_LOG") {
             builder = builder.set_override("logging.level", log_level)?;
+        }
+        if let Ok(filter_own) = std::env::var("FILTER_OWN_CHANGES") {
+            let filter_bool = filter_own.to_lowercase() == "true" || filter_own == "1";
+            builder = builder.set_override("notifications.filter_own_changes", filter_bool)?;
         }
 
         let config = builder
