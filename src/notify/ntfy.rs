@@ -283,8 +283,8 @@ mod tests {
         assert!(message.contains("Category: none → Dairy"));
     }
 
-    #[test]
-    fn test_format_added_notification() {
+    #[tokio::test]
+    async fn test_format_added_notification() {
         use crate::config::{NtfyPriorities, NtfyTags};
 
         let config = NtfyConfig {
@@ -294,7 +294,7 @@ mod tests {
             tags: NtfyTags::default(),
         };
 
-        let client = NtfyClient::new(config);
+        let client = NtfyClient::new(config, Arc::new(tokio::sync::RwLock::new(HashMap::new())));
 
         let change = ListChange::ItemAdded {
             list_id: "list-1".to_string(),
@@ -305,10 +305,12 @@ mod tests {
                 details: "Whole milk".to_string(),
                 quantity: Some("1 gallon".to_string()),
                 category: Some("Dairy".to_string()),
+                user_id: None,
             },
+            user_id: None,
         };
 
-        let (title, message, priority, tags) = client.format_notification(&change);
+        let (title, message, priority, tags) = client.format_notification(&change).await;
 
         assert!(title.contains("Milk"));
         assert!(title.contains("Groceries"));
