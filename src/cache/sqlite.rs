@@ -2,6 +2,7 @@ use super::models::{DbItem, DbList};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use sqlx::SqliteConnection;
 use std::str::FromStr;
 use tracing::{debug, info};
 
@@ -168,6 +169,11 @@ impl SqliteCache {
 
     /// Upsert an item (insert or update)
     pub async fn upsert_item(&self, item: &DbItem) -> Result<()> {
+        let mut connection = self.pool.acquire().await?;
+        Self::write_item(&mut connection, item).await
+    }
+
+    async fn write_item(connection: &mut SqliteConnection, item: &DbItem) -> Result<()> {
         sqlx::query(
             r#"
             INSERT INTO items (id, list_id, name, details, quantity, category, is_checked, user_id, last_seen)
@@ -192,7 +198,7 @@ impl SqliteCache {
         .bind(item.is_checked)
         .bind(&item.user_id)
         .bind(item.last_seen)
-        .execute(&self.pool)
+        .execute(connection)
         .await
         .context("Failed to upsert item")?;
 
@@ -200,16 +206,35 @@ impl SqliteCache {
         Ok(())
     }
 
-    /// Sync a complete list with the cache
-    /// This will upsert the list and all its items, and mark items as seen
+    /// Replace a list's cached snapshot atomically, including removals.
     pub async fn sync_list(&self, list: &anylist_rs::List) -> Result<()> {
+        let mut transaction = self.pool.begin().await.context("Failed to begin cache sync")?;
         let db_list = DbList::from(list);
-        self.upsert_list(&db_list).await?;
+        sqlx::query(
+            r#"
+            INSERT INTO lists (id, name, last_updated) VALUES (?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name, last_updated = excluded.last_updated
+            "#,
+        )
+        .bind(&db_list.id)
+        .bind(&db_list.name)
+        .bind(db_list.last_updated)
+        .execute(&mut *transaction)
+        .await
+        .context("Failed to upsert list")?;
 
+        // A full snapshot is authoritative. Do not use second-resolution last_seen:
+        // two syncs in the same second must still remove absent items.
+        sqlx::query("DELETE FROM items WHERE list_id = ?")
+            .bind(&list.id)
+            .execute(&mut *transaction)
+            .await
+            .context("Failed to replace cached items")?;
         for item in &list.items {
-            let db_item = DbItem::from(item);
-            self.upsert_item(&db_item).await?;
+            Self::write_item(&mut transaction, &DbItem::from(item)).await?;
         }
+        transaction.commit().await.context("Failed to commit cache sync")?;
 
         debug!("Synced list: {} ({} items)", list.name, list.items.len());
         Ok(())
@@ -294,6 +319,60 @@ pub struct CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn snapshot(items: Vec<anylist_rs::ListItem>) -> anylist_rs::List {
+        anylist_rs::List {
+            id: "list-1".into(), name: "Groceries".into(), items,
+            shared_users: vec![],
+        }
+    }
+
+    fn item(id: &str) -> anylist_rs::ListItem {
+        anylist_rs::ListItem {
+            id: id.into(), list_id: "list-1".into(), name: id.into(),
+            details: String::new(), quantity: None, category: None,
+            is_checked: false, user_id: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn removed_items_do_not_repeat_and_empty_lists_are_cleared() {
+        let cache = SqliteCache::new("sqlite::memory:").await.unwrap();
+        cache.sync_list(&snapshot(vec![item("removed"), item("kept")])).await.unwrap();
+        let current = snapshot(vec![item("kept")]);
+        let before = cache.get_items("list-1").await.unwrap();
+        assert_eq!(crate::sync::diff::detect_changes("list-1", "Groceries", &before, &current.items).len(), 1);
+        cache.sync_list(&current).await.unwrap();
+        let after = cache.get_items("list-1").await.unwrap();
+        assert_eq!(after.len(), 1);
+        assert!(crate::sync::diff::detect_changes("list-1", "Groceries", &after, &current.items).is_empty());
+        cache.sync_list(&current).await.unwrap();
+        cache.sync_list(&snapshot(vec![])).await.unwrap();
+        assert!(cache.get_items("list-1").await.unwrap().is_empty());
+        assert!(cache.get_list("list-1").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn failed_snapshot_rolls_back_and_other_lists_are_untouched() {
+        let cache = SqliteCache::new("sqlite::memory:").await.unwrap();
+        cache.sync_list(&snapshot(vec![item("original")])).await.unwrap();
+        let mut other = snapshot(vec![]);
+        other.id = "other-list".into();
+        let mut other_item = item("other-item");
+        other_item.list_id = other.id.clone();
+        other.items.push(other_item);
+        cache.sync_list(&other).await.unwrap();
+        sqlx::query("CREATE TRIGGER reject_bad_item BEFORE INSERT ON items WHEN NEW.id = 'bad' BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+            .execute(&cache.pool).await.unwrap();
+        let mut bad = snapshot(vec![item("new"), item("bad")]);
+        bad.name = "Changed name".into();
+        assert!(cache.sync_list(&bad).await.is_err());
+        let cached = cache.get_items("list-1").await.unwrap();
+        assert_eq!(cached.len(), 1);
+        assert_eq!(cached[0].id, "original");
+        assert_eq!(cache.get_list("list-1").await.unwrap().unwrap().name, "Groceries");
+        assert_eq!(cache.get_items("other-list").await.unwrap()[0].id, "other-item");
+    }
 
     #[tokio::test]
     async fn test_cache_operations() {

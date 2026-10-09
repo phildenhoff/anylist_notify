@@ -15,6 +15,7 @@ pub struct SyncHandler {
     config: Arc<Config>,
     authenticated_user_id: String,
     user_names: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
+    sync_lock: tokio::sync::Mutex<()>,
 }
 
 impl SyncHandler {
@@ -33,6 +34,7 @@ impl SyncHandler {
             config,
             authenticated_user_id,
             user_names,
+            sync_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -87,6 +89,10 @@ impl SyncHandler {
 
     /// Handle shopping list changes by fetching updates and detecting diffs
     async fn handle_shopping_lists_changed(&self) -> Result<()> {
+        // Event callbacks spawn separate tasks. Serialize fetch, diff and cache
+        // updates so overlapping events cannot compare against the same snapshot.
+        let _sync_guard = self.sync_lock.lock().await;
+
         // Fetch current lists from API
         let current_lists = self
             .client
@@ -102,7 +108,7 @@ impl SyncHandler {
             if let Err(e) = self.process_list_changes(current_list).await {
                 error!(
                     "Error processing changes for list {}: {}",
-                    current_list.name, e
+                    current_list.name, format!("{:#}", e)
                 );
                 // Continue processing other lists even if one fails
             }
