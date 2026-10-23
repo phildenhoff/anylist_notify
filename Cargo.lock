@@ -67,7 +67,8 @@ dependencies = [
 [[package]]
 name = "anylist_rs"
 version = "0.5.0"
-source = "git+https://github.com/phildenhoff/anylist_rs.git#fa02d55ee8e1670ea73d7e3661554fab98c28204"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f421e6ab39e6e3bab57986d715f370c36a7d439b7566a026ce6b44003732d1ff"
 dependencies = [
  "chrono",
  "futures-util",
