@@ -70,14 +70,14 @@ impl DbItem {
 impl From<&anylist_rs::ListItem> for DbItem {
     fn from(item: &anylist_rs::ListItem) -> Self {
         DbItem::new(
-            item.id.clone(),
-            item.list_id.clone(),
-            item.name.clone(),
-            item.details.clone(),
-            item.quantity.clone(),
-            item.category.clone(),
-            item.is_checked,
-            item.user_id.clone(),
+            item.id().to_string(),
+            item.list_id().to_string(),
+            item.name().to_string(),
+            item.details().to_string(),
+            item.quantity().map(str::to_string),
+            item.category().map(str::to_string),
+            item.is_checked(),
+            item.user_id().map(str::to_string),
         )
     }
 }
@@ -85,6 +85,6 @@ impl From<&anylist_rs::ListItem> for DbItem {
 /// Convert anylist_rs::List to DbList
 impl From<&anylist_rs::List> for DbList {
     fn from(list: &anylist_rs::List) -> Self {
-        DbList::new(list.id.clone(), list.name.clone())
+        DbList::new(list.id().to_string(), list.name().to_string())
     }
 }

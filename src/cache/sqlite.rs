@@ -227,16 +227,16 @@ impl SqliteCache {
         // A full snapshot is authoritative. Do not use second-resolution last_seen:
         // two syncs in the same second must still remove absent items.
         sqlx::query("DELETE FROM items WHERE list_id = ?")
-            .bind(&list.id)
+            .bind(list.id())
             .execute(&mut *transaction)
             .await
             .context("Failed to replace cached items")?;
-        for item in &list.items {
+        for item in list.items() {
             Self::write_item(&mut transaction, &DbItem::from(item)).await?;
         }
         transaction.commit().await.context("Failed to commit cache sync")?;
 
-        debug!("Synced list: {} ({} items)", list.name, list.items.len());
+        debug!("Synced list: {} ({} items)", list.name(), list.items().len());
         Ok(())
     }
 
@@ -320,19 +320,28 @@ pub struct CacheStats {
 mod tests {
     use super::*;
 
+    // anylist_rs keeps List/ListItem fields private, so build fixtures via serde.
+    fn list(id: &str, name: &str, items: Vec<anylist_rs::ListItem>) -> anylist_rs::List {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "name": name, "items": items, "shared_users": [],
+        }))
+        .unwrap()
+    }
+
     fn snapshot(items: Vec<anylist_rs::ListItem>) -> anylist_rs::List {
-        anylist_rs::List {
-            id: "list-1".into(), name: "Groceries".into(), items,
-            shared_users: vec![],
-        }
+        list("list-1", "Groceries", items)
+    }
+
+    fn item_in(list_id: &str, id: &str) -> anylist_rs::ListItem {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "list_id": list_id, "name": id, "details": "",
+            "is_checked": false,
+        }))
+        .unwrap()
     }
 
     fn item(id: &str) -> anylist_rs::ListItem {
-        anylist_rs::ListItem {
-            id: id.into(), list_id: "list-1".into(), name: id.into(),
-            details: String::new(), quantity: None, category: None,
-            is_checked: false, user_id: None,
-        }
+        item_in("list-1", id)
     }
 
     #[tokio::test]
@@ -341,11 +350,11 @@ mod tests {
         cache.sync_list(&snapshot(vec![item("removed"), item("kept")])).await.unwrap();
         let current = snapshot(vec![item("kept")]);
         let before = cache.get_items("list-1").await.unwrap();
-        assert_eq!(crate::sync::diff::detect_changes("list-1", "Groceries", &before, &current.items).len(), 1);
+        assert_eq!(crate::sync::diff::detect_changes("list-1", "Groceries", &before, current.items()).len(), 1);
         cache.sync_list(&current).await.unwrap();
         let after = cache.get_items("list-1").await.unwrap();
         assert_eq!(after.len(), 1);
-        assert!(crate::sync::diff::detect_changes("list-1", "Groceries", &after, &current.items).is_empty());
+        assert!(crate::sync::diff::detect_changes("list-1", "Groceries", &after, current.items()).is_empty());
         cache.sync_list(&current).await.unwrap();
         cache.sync_list(&snapshot(vec![])).await.unwrap();
         assert!(cache.get_items("list-1").await.unwrap().is_empty());
@@ -356,16 +365,11 @@ mod tests {
     async fn failed_snapshot_rolls_back_and_other_lists_are_untouched() {
         let cache = SqliteCache::new("sqlite::memory:").await.unwrap();
         cache.sync_list(&snapshot(vec![item("original")])).await.unwrap();
-        let mut other = snapshot(vec![]);
-        other.id = "other-list".into();
-        let mut other_item = item("other-item");
-        other_item.list_id = other.id.clone();
-        other.items.push(other_item);
+        let other = list("other-list", "Groceries", vec![item_in("other-list", "other-item")]);
         cache.sync_list(&other).await.unwrap();
         sqlx::query("CREATE TRIGGER reject_bad_item BEFORE INSERT ON items WHEN NEW.id = 'bad' BEGIN SELECT RAISE(ABORT, 'test failure'); END")
             .execute(&cache.pool).await.unwrap();
-        let mut bad = snapshot(vec![item("new"), item("bad")]);
-        bad.name = "Changed name".into();
+        let bad = list("list-1", "Changed name", vec![item("new"), item("bad")]);
         assert!(cache.sync_list(&bad).await.is_err());
         let cached = cache.get_items("list-1").await.unwrap();
         assert_eq!(cached.len(), 1);

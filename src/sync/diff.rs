@@ -66,12 +66,12 @@ pub enum FieldChange {
 impl ItemInfo {
     pub fn from_list_item(item: &ListItem) -> Self {
         Self {
-            id: item.id.clone(),
-            name: item.name.clone(),
-            details: item.details.clone(),
-            quantity: item.quantity.clone(),
-            category: item.category.clone(),
-            user_id: item.user_id.clone(),
+            id: item.id().to_string(),
+            name: item.name().to_string(),
+            details: item.details().to_string(),
+            quantity: item.quantity().map(str::to_string),
+            category: item.category().map(str::to_string),
+            user_id: item.user_id().map(str::to_string),
         }
     }
 
@@ -100,16 +100,16 @@ pub fn detect_changes(
     let cached_map: HashMap<&str, &DbItem> =
         cached_items.iter().map(|item| (item.id.as_str(), item)).collect();
     let current_map: HashMap<&str, &ListItem> =
-        current_items.iter().map(|item| (item.id.as_str(), item)).collect();
+        current_items.iter().map(|item| (item.id(), item)).collect();
 
     // Detect added items (in current but not in cached)
     for current_item in current_items {
-        if !cached_map.contains_key(current_item.id.as_str()) {
+        if !cached_map.contains_key(current_item.id()) {
             changes.push(ListChange::ItemAdded {
                 list_id: list_id.to_string(),
                 list_name: list_name.to_string(),
                 item: ItemInfo::from_list_item(current_item),
-                user_id: current_item.user_id.clone(),
+                user_id: current_item.user_id().map(str::to_string),
             });
         }
     }
@@ -128,22 +128,22 @@ pub fn detect_changes(
 
     // Detect modifications (items in both, but with different values)
     for current_item in current_items {
-        if let Some(cached_item) = cached_map.get(current_item.id.as_str()) {
+        if let Some(cached_item) = cached_map.get(current_item.id()) {
             // Check for check state changes
-            if cached_item.is_checked != current_item.is_checked {
-                if current_item.is_checked {
+            if cached_item.is_checked != current_item.is_checked() {
+                if current_item.is_checked() {
                     changes.push(ListChange::ItemChecked {
                         list_id: list_id.to_string(),
                         list_name: list_name.to_string(),
-                        item_name: current_item.name.clone(),
-                        user_id: current_item.user_id.clone(),
+                        item_name: current_item.name().to_string(),
+                        user_id: current_item.user_id().map(str::to_string),
                     });
                 } else {
                     changes.push(ListChange::ItemUnchecked {
                         list_id: list_id.to_string(),
                         list_name: list_name.to_string(),
-                        item_name: current_item.name.clone(),
-                        user_id: current_item.user_id.clone(),
+                        item_name: current_item.name().to_string(),
+                        user_id: current_item.user_id().map(str::to_string),
                     });
                 }
             }
@@ -154,9 +154,9 @@ pub fn detect_changes(
                 changes.push(ListChange::ItemModified {
                     list_id: list_id.to_string(),
                     list_name: list_name.to_string(),
-                    item_name: current_item.name.clone(),
+                    item_name: current_item.name().to_string(),
                     changes: field_changes,
-                    user_id: current_item.user_id.clone(),
+                    user_id: current_item.user_id().map(str::to_string),
                 });
             }
         }
@@ -169,31 +169,31 @@ pub fn detect_changes(
 fn detect_field_changes(cached: &DbItem, current: &ListItem) -> Vec<FieldChange> {
     let mut changes = Vec::new();
 
-    if cached.name != current.name {
+    if cached.name != current.name() {
         changes.push(FieldChange::Name {
             old: cached.name.clone(),
-            new: current.name.clone(),
+            new: current.name().to_string(),
         });
     }
 
-    if cached.details != current.details {
+    if cached.details != current.details() {
         changes.push(FieldChange::Details {
             old: cached.details.clone(),
-            new: current.details.clone(),
+            new: current.details().to_string(),
         });
     }
 
-    if cached.quantity != current.quantity {
+    if cached.quantity.as_deref() != current.quantity() {
         changes.push(FieldChange::Quantity {
             old: cached.quantity.clone(),
-            new: current.quantity.clone(),
+            new: current.quantity().map(str::to_string),
         });
     }
 
-    if cached.category != current.category {
+    if cached.category.as_deref() != current.category() {
         changes.push(FieldChange::Category {
             old: cached.category.clone(),
-            new: current.category.clone(),
+            new: current.category().map(str::to_string),
         });
     }
 
@@ -218,17 +218,21 @@ mod tests {
         }
     }
 
+    // anylist_rs keeps ListItem fields private, so build fixtures via serde.
+    fn list_item(fields: serde_json::Value) -> ListItem {
+        let mut item = serde_json::json!({
+            "list_id": "list-1",
+            "details": "",
+            "user_id": "test-user",
+        });
+        item.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        serde_json::from_value(item).unwrap()
+    }
+
     fn create_list_item(id: &str, name: &str, is_checked: bool) -> ListItem {
-        ListItem {
-            id: id.to_string(),
-            list_id: "list-1".to_string(),
-            name: name.to_string(),
-            details: "".to_string(),
-            quantity: None,
-            category: None,
-            is_checked,
-            user_id: Some("test-user".to_string()),
-        }
+        list_item(serde_json::json!({ "id": id, "name": name, "is_checked": is_checked }))
     }
 
     #[test]
@@ -309,16 +313,12 @@ mod tests {
             last_seen: 0,
         }];
 
-        let current = vec![ListItem {
-            id: "item-1".to_string(),
-            list_id: "list-1".to_string(),
-            name: "Milk".to_string(),
-            details: "".to_string(),
-            quantity: Some("2 gallons".to_string()),
-            category: None,
-            is_checked: false,
-            user_id: Some("test-user".to_string()),
-        }];
+        let current = vec![list_item(serde_json::json!({
+            "id": "item-1",
+            "name": "Milk",
+            "quantity": "2 gallons",
+            "is_checked": false,
+        }))];
 
         let changes = detect_changes("list-1", "Groceries", &cached, &current);
 

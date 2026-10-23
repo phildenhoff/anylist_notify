@@ -62,8 +62,8 @@ impl SyncHandler {
             self.cache
                 .sync_list(list)
                 .await
-                .context(format!("Failed to sync list: {}", list.name))?;
-            debug!("Cached list: {} ({} items)", list.name, list.items.len());
+                .context(format!("Failed to sync list: {}", list.name()))?;
+            debug!("Cached list: {} ({} items)", list.name(), list.items().len());
         }
 
         info!("Cache initialized with {} lists", lists.len());
@@ -75,6 +75,12 @@ impl SyncHandler {
         match event {
             SyncEvent::ShoppingListsChanged => {
                 info!("Shopping lists changed - processing updates");
+                self.handle_shopping_lists_changed().await?;
+            }
+            SyncEvent::Reconnected => {
+                // Events sent while the WebSocket was down are not replayed, so
+                // refetch and diff against the cache to catch up on the gap.
+                info!("Reconnected to AnyList - refetching lists to catch up");
                 self.handle_shopping_lists_changed().await?;
             }
             SyncEvent::Heartbeat => {
@@ -108,7 +114,7 @@ impl SyncHandler {
             if let Err(e) = self.process_list_changes(current_list).await {
                 error!(
                     "Error processing changes for list {}: {}",
-                    current_list.name, format!("{:#}", e)
+                    current_list.name(), format!("{:#}", e)
                 );
                 // Continue processing other lists even if one fails
             }
@@ -125,23 +131,16 @@ impl SyncHandler {
         let mut names = self.user_names.write().await;
 
         for list in lists {
-            for user in &list.shared_users {
+            for user in list.shared_users() {
                 // Use full name if available, otherwise email, otherwise user_id
-                let display_name = if let Some(ref name) = user.full_name {
-                    if !name.is_empty() {
-                        name.clone()
-                    } else if let Some(ref email) = user.email {
-                        email.clone()
-                    } else {
-                        user.user_id.clone()
-                    }
-                } else if let Some(ref email) = user.email {
-                    email.clone()
-                } else {
-                    user.user_id.clone()
-                };
+                let display_name = user
+                    .full_name()
+                    .filter(|name| !name.is_empty())
+                    .or(user.email())
+                    .unwrap_or(user.user_id())
+                    .to_string();
 
-                names.insert(user.user_id.clone(), display_name);
+                names.insert(user.user_id().to_string(), display_name);
             }
         }
 
@@ -150,21 +149,21 @@ impl SyncHandler {
 
     /// Process changes for a single list
     async fn process_list_changes(&self, current_list: &anylist_rs::List) -> Result<()> {
-        debug!("Processing changes for list: {}", current_list.name);
+        debug!("Processing changes for list: {}", current_list.name());
 
         // Get cached items for this list
         let cached_items = self
             .cache
-            .get_items(&current_list.id)
+            .get_items(current_list.id())
             .await
             .context("Failed to get cached items")?;
 
         // Detect changes
         let mut changes = detect_changes(
-            &current_list.id,
-            &current_list.name,
+            current_list.id(),
+            current_list.name(),
             &cached_items,
-            &current_list.items,
+            current_list.items(),
         );
 
         // Filter out own changes if configured
@@ -175,7 +174,7 @@ impl SyncHandler {
             if filtered_count > 0 {
                 debug!(
                     "Filtered out {} change(s) made by authenticated user in list: {}",
-                    filtered_count, current_list.name
+                    filtered_count, current_list.name()
                 );
             }
         }
@@ -184,7 +183,7 @@ impl SyncHandler {
             info!(
                 "Detected {} change(s) in list: {}",
                 changes.len(),
-                current_list.name
+                current_list.name()
             );
 
             // Send notifications for each change
@@ -196,7 +195,7 @@ impl SyncHandler {
                 }
             }
         } else {
-            debug!("No changes detected in list: {}", current_list.name);
+            debug!("No changes detected in list: {}", current_list.name());
         }
 
         // Update cache with current state
@@ -242,7 +241,7 @@ impl SyncHandler {
             .context("Failed to get cached lists")?;
 
         let current_ids: std::collections::HashSet<_> =
-            current_lists.iter().map(|l| l.id.as_str()).collect();
+            current_lists.iter().map(|l| l.id()).collect();
 
         for cached_list in cached_lists {
             if !current_ids.contains(cached_list.id.as_str()) {
